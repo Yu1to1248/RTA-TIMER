@@ -1,300 +1,191 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LiveSplit風RTAタイマー</title>
-  <style>
-    body {
-      margin: 0;
-      background-color: #000;
-      color: white;
-      font-family: 'Segoe UI', sans-serif;
-      display: flex;
-      height: 100vh;
-    }
-    #sidebar {
-      background-color: #111;
-      width: 200px;
-      padding: 20px;
-      box-sizing: border-box;
-    }
-    #sidebar button {
-      display: block;
-      width: 100%;
-      margin-bottom: 10px;
-      padding: 10px;
-      background-color: #222;
-      border: none;
-      color: white;
-      font-size: 14px;
-      cursor: pointer;
-    }
-    #main {
-      flex-grow: 1;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      padding: 20px;
-      box-sizing: border-box;
-    }
-    #header {
-      text-align: center;
-    }
-    #title {
-      font-size: 20px;
-      color: #ccc;
-    }
-    #category {
-      font-size: 16px;
-      color: #888;
-    }
-    #timer {
-      font-size: 64px;
-      color: #4fc3f7;
-      font-weight: bold;
-      text-align: right;
-    }
-    #delta {
-      font-size: 24px;
-      color: #aaa;
-      text-align: right;
-    }
-    #splits {
-      margin-top: 10px;
-    }
-    .split {
-      display: flex;
-      justify-content: space-between;
-      border-bottom: 1px solid #333;
-      padding: 4px 0;
-    }
-    .split img {
-      height: 20px;
-      width: 20px;
-      margin-right: 8px;
-    }
-    .split-label {
-      display: flex;
-      align-items: center;
-      color: white;
-    }
-    .split-time {
-      color: #ffeb3b;
-    }
-    #footer {
-      display: flex;
-      justify-content: space-between;
-    }
-    #footer span {
-      font-size: 14px;
-      color: #ccc;
-    }
-    #editor {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      background: rgba(0, 0, 0, 0.9);
-      color: white;
-      display: none;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
-      padding: 20px;
-      box-sizing: border-box;
-      overflow-y: auto;
-    }
-    #editor input {
-      margin: 4px;
-      padding: 4px;
-      width: 200px;
-    }
-    #editor button {
-      margin: 8px;
-    }
-  </style>
-</head>
-<body>
-  <div id="sidebar">
-    <button onclick="editSplits()">📝 Splits</button>
-    <button onclick="editLayout()">🎨 Layout</button>
-    <button onclick="startStop()">▶️ Start / Stop</button>
-    <button onclick="split()">⏱ Split</button>
-    <button onclick="reset()">🔄 Reset</button>
-    <button onclick="saveLayout()">💾 Save Layout</button>
-    <button onclick="loadLayout()">📂 Load Layout</button>
-  </div>
-  <div id="main">
-    <div>
-      <div id="header">
-        <div id="title">BotW Great Plateau</div>
-        <div id="category">Any%</div>
-      </div>
-      <div id="timer">00:00.00</div>
-      <div id="delta">+0.00</div>
-      <div id="splits"></div>
-    </div>
-    <div id="footer">
-      <span id="currentPace">Current Pace: 00:00</span>
-      <span id="sumOfBest">Sum of Best: 00:00</span>
-    </div>
-  </div>
+<script>
+let startTime = null;
+let timerInterval = null;
+let elapsed = 0;
+let currentSplit = 0;
+let splits = [];
+let pbSplits = [];
+let bestSplits = [];
+let keyBinds = {
+  start: 's',
+  split: 'd',
+  stop: 'f',
+};
 
-  <div id="editor">
-    <h2>スプリット編集</h2>
-    <label>タイトル：<input id="titleInput" /></label><br>
-    <div id="splitList"></div>
-    <button onclick="addSplit()">＋ スプリット追加</button>
-    <button onclick="saveSplits()">保存して閉じる</button>
-  </div>
+function formatTime(ms) {
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.floor((ms % 60000) / 1000);
+  const hundredths = Math.floor((ms % 1000) / 10);
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(hundredths).padStart(2, '0')}`;
+}
 
-  <script>
-    let startTime;
-    let running = false;
-    let timerInterval;
-    let currentSplit = 0;
-    let splitTimes = [];
-    let bestSplits = [];
+function updateDisplay() {
+  document.getElementById('timer').textContent = formatTime(elapsed);
+  const splitsEl = document.getElementById('splits');
+  splitsEl.innerHTML = '';
+  splits.forEach((s, i) => {
+    const div = document.createElement('div');
+    div.className = 'split';
+    const label = document.createElement('div');
+    if (s.img) {
+      const img = document.createElement('img');
+      img.src = s.img;
+      label.appendChild(img);
+    }
+    label.appendChild(document.createTextNode(s.name || ''));
 
-    let splitsData = [
-      { label: "Bomb", img: "" },
-      { label: "Magnesis", img: "" },
-      { label: "Stasis", img: "" },
-      { label: "Cryonis", img: "" },
-      { label: "Paraglider", img: "" }
-    ];
-    let timerTitle = "BotW Great Plateau";
+    const time = document.createElement('div');
+    time.textContent = s.time ? formatTime(s.time) : '';
 
-    function format(ms) {
-      const m = Math.floor(ms / 60000);
-      const s = Math.floor((ms % 60000) / 1000);
-      const cs = Math.floor((ms % 1000) / 10);
-      return `${m}:${s.toString().padStart(2, '0')}.${cs.toString().padStart(2, '0')}`;
+    if (pbSplits[i] && s.time < pbSplits[i]) {
+      time.style.color = 'gold';
     }
 
-    function updateTimer() {
-      const elapsed = performance.now() - startTime;
-      document.getElementById("timer").textContent = format(elapsed);
-    }
+    div.appendChild(label);
+    div.appendChild(time);
+    splitsEl.appendChild(div);
+  });
+}
 
-    function startStop() {
-      if (running) {
-        clearInterval(timerInterval);
-        running = false;
-      } else {
-        startTime = performance.now();
-        timerInterval = setInterval(updateTimer, 33);
-        running = true;
-      }
-    }
+function startTimer() {
+  if (timerInterval) return;
+  startTime = Date.now() - elapsed;
+  timerInterval = setInterval(() => {
+    elapsed = Date.now() - startTime;
+    updateDisplay();
+  }, 50);
+}
 
-    function split() {
-      if (!running) return;
-      const now = performance.now();
-      const elapsed = now - startTime;
-      splitTimes[currentSplit] = elapsed;
-      if (!bestSplits[currentSplit] || elapsed < bestSplits[currentSplit]) {
-        bestSplits[currentSplit] = elapsed;
-      }
-      currentSplit++;
-      renderSplits();
-    }
+function stopTimer() {
+  clearInterval(timerInterval);
+  timerInterval = null;
+}
 
-    function reset() {
-      clearInterval(timerInterval);
-      running = false;
-      document.getElementById("timer").textContent = "00:00.00";
-      splitTimes = [];
-      currentSplit = 0;
-      renderSplits();
-    }
+function resetTimer() {
+  stopTimer();
+  elapsed = 0;
+  currentSplit = 0;
+  splits.forEach(s => s.time = null);
+  updateDisplay();
+}
 
-    function renderSplits() {
-      document.getElementById("title").textContent = timerTitle;
-      const container = document.getElementById("splits");
-      container.innerHTML = "";
-      let totalBest = 0;
-      splitsData.forEach((split, i) => {
-        const row = document.createElement("div");
-        row.className = "split";
+function splitTimer() {
+  if (!timerInterval || currentSplit >= splits.length) return;
+  splits[currentSplit].time = elapsed;
+  if (!pbSplits[currentSplit] || elapsed < pbSplits[currentSplit]) {
+    bestSplits[currentSplit] = elapsed;
+  }
+  currentSplit++;
+  updateDisplay();
+}
 
-        const label = document.createElement("div");
-        label.className = "split-label";
-        if (split.img) {
-          const img = document.createElement("img");
-          img.src = split.img;
-          label.appendChild(img);
-        }
-        label.appendChild(document.createTextNode(split.label));
+function openSplitsEditor() {
+  const dialog = document.createElement('dialog');
+  dialog.innerHTML = `
+    <form method="dialog">
+      <h3>スプリット編集</h3>
+      <div id="split-edit-list"></div>
+      <button type="button" onclick="addSplitEditor()">スプリット追加</button>
+      <button type="submit">OK</button>
+    </form>
+  `;
+  document.body.appendChild(dialog);
+  const list = dialog.querySelector('#split-edit-list');
+  list.innerHTML = '';
+  splits.forEach((s, i) => {
+    const row = document.createElement('div');
+    row.innerHTML = `
+      <input type="text" value="${s.name}" onchange="splits[${i}].name = this.value">
+      <input type="file" accept="image/*" onchange="uploadSplitImage(event, ${i})">
+      <button type="button" onclick="splits.splice(${i},1);this.parentElement.remove()">削除</button>
+    `;
+    list.appendChild(row);
+  });
+  dialog.showModal();
+}
 
-        const time = document.createElement("div");
-        time.className = "split-time";
-        if (splitTimes[i]) time.textContent = format(splitTimes[i]);
-        else if (bestSplits[i]) time.textContent = format(bestSplits[i]);
-        else time.textContent = "--:--";
+function addSplitEditor() {
+  splits.push({ name: '', img: null, time: null });
+  openSplitsEditor();
+}
 
-        row.appendChild(label);
-        row.appendChild(time);
-        container.appendChild(row);
+function uploadSplitImage(event, i) {
+  const file = event.target.files[0];
+  const reader = new FileReader();
+  reader.onload = e => {
+    splits[i].img = e.target.result;
+    updateDisplay();
+  };
+  reader.readAsDataURL(file);
+}
 
-        if (bestSplits[i]) totalBest += bestSplits[i];
-      });
-      document.getElementById("sumOfBest").textContent = "Sum of Best: " + format(totalBest);
-    }
+function saveSplits() {
+  localStorage.setItem('splits', JSON.stringify(splits));
+  localStorage.setItem('pbs', JSON.stringify(pbSplits));
+  localStorage.setItem('bests', JSON.stringify(bestSplits));
+}
 
-    function saveLayout() {
-      localStorage.setItem("splitsData", JSON.stringify(splitsData));
-      localStorage.setItem("timerTitle", timerTitle);
-      alert("保存しました");
-    }
+function loadSplits() {
+  const s = JSON.parse(localStorage.getItem('splits')) || [];
+  const pb = JSON.parse(localStorage.getItem('pbs')) || [];
+  const best = JSON.parse(localStorage.getItem('bests')) || [];
+  splits = s;
+  pbSplits = pb;
+  bestSplits = best;
+  updateDisplay();
+}
 
-    function loadLayout() {
-      const data = localStorage.getItem("splitsData");
-      if (data) splitsData = JSON.parse(data);
-      const title = localStorage.getItem("timerTitle");
-      if (title) timerTitle = title;
-      renderSplits();
-    }
+function saveLayout() {
+  localStorage.setItem('title', document.getElementById('title').textContent);
+  localStorage.setItem('keyBinds', JSON.stringify(keyBinds));
+}
 
-    function editSplits() {
-      document.getElementById("editor").style.display = "flex";
-      document.getElementById("titleInput").value = timerTitle;
-      const list = document.getElementById("splitList");
-      list.innerHTML = "";
-      splitsData.forEach((split, i) => {
-        const div = document.createElement("div");
-        div.innerHTML = `
-          <input placeholder="ラベル" value="${split.label}" onchange="splitsData[${i}].label=this.value">
-          <input placeholder="画像URL" value="${split.img}" onchange="splitsData[${i}].img=this.value">
-          <button onclick="removeSplit(${i})">❌</button>
-        `;
-        list.appendChild(div);
-      });
-    }
+function loadLayout() {
+  const t = localStorage.getItem('title');
+  if (t) document.getElementById('title').textContent = t;
+  const k = JSON.parse(localStorage.getItem('keyBinds'));
+  if (k) keyBinds = k;
+}
 
-    function addSplit() {
-      splitsData.push({ label: "New Split", img: "" });
-      editSplits();
-    }
+function openLayoutEditor() {
+  const dialog = document.createElement('dialog');
+  dialog.innerHTML = `
+    <form method="dialog">
+      <h3>レイアウト設定</h3>
+      <label>タイトル:</label>
+      <input type="text" value="${document.getElementById('title').textContent}" onchange="document.getElementById('title').textContent = this.value">
+      <button type="submit">OK</button>
+    </form>
+  `;
+  document.body.appendChild(dialog);
+  dialog.showModal();
+}
 
-    function removeSplit(index) {
-      splitsData.splice(index, 1);
-      editSplits();
-    }
+function openSettings() {
+  const dialog = document.createElement('dialog');
+  dialog.innerHTML = `
+    <form method="dialog">
+      <h3>キー設定</h3>
+      <label>Startキー:</label>
+      <input type="text" value="${keyBinds.start}" onchange="keyBinds.start = this.value">
+      <label>Splitキー:</label>
+      <input type="text" value="${keyBinds.split}" onchange="keyBinds.split = this.value">
+      <label>Stopキー:</label>
+      <input type="text" value="${keyBinds.stop}" onchange="keyBinds.stop = this.value">
+      <button type="submit">OK</button>
+    </form>
+  `;
+  document.body.appendChild(dialog);
+  dialog.showModal();
+}
 
-    function saveSplits() {
-      timerTitle = document.getElementById("titleInput").value;
-      document.getElementById("editor").style.display = "none";
-      renderSplits();
-    }
+document.addEventListener('keydown', e => {
+  if (e.key === keyBinds.start) startTimer();
+  if (e.key === keyBinds.split) splitTimer();
+  if (e.key === keyBinds.stop) stopTimer();
+});
 
-    function editLayout() {
-      alert("レイアウト編集画面は後ほど実装します。");
-    }
-
-    renderSplits();
+loadSplits();
+loadLayout();
+updateDisplay();
   </script>
-</body>
-</html>
