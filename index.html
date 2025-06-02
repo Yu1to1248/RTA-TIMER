@@ -3,96 +3,180 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RTAタイマー</title>
+  <title>LiveSplit風RTAタイマー</title>
   <style>
     body {
-      background-color: #222;
+      margin: 0;
+      background-color: #000;
       color: white;
-      font-family: sans-serif;
+      font-family: 'Segoe UI', sans-serif;
+      display: flex;
+      height: 100vh;
+    }
+    #sidebar {
+      background-color: #111;
+      width: 200px;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    #sidebar button {
+      display: block;
+      width: 100%;
+      margin-bottom: 10px;
+      padding: 10px;
+      background-color: #222;
+      border: none;
+      color: white;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    #main {
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    #header {
       text-align: center;
     }
-    .timer {
-      font-size: 60px;
-      margin-top: 20px;
+    #title {
+      font-size: 20px;
+      color: #ccc;
     }
-    .splits {
-      margin-top: 30px;
+    #category {
+      font-size: 16px;
+      color: #888;
+    }
+    #timer {
+      font-size: 64px;
+      color: #4fc3f7;
+      font-weight: bold;
+      text-align: right;
+    }
+    #delta {
+      font-size: 24px;
+      color: #aaa;
+      text-align: right;
+    }
+    #splits {
+      margin-top: 10px;
     }
     .split {
       display: flex;
-      justify-content: center;
-      align-items: center;
-      gap: 10px;
-      margin: 4px 0;
+      justify-content: space-between;
+      border-bottom: 1px solid #333;
+      padding: 4px 0;
     }
     .split img {
-      width: 24px;
-      height: 24px;
+      height: 20px;
+      width: 20px;
+      margin-right: 8px;
     }
-    .button {
-      font-size: 16px;
-      margin: 5px;
-      padding: 6px 12px;
-      cursor: pointer;
+    .split-label {
+      display: flex;
+      align-items: center;
+      color: white;
     }
-    input[type="text"] {
-      padding: 4px;
+    .split-time {
+      color: #ffeb3b;
+    }
+    #footer {
+      display: flex;
+      justify-content: space-between;
+    }
+    #footer span {
       font-size: 14px;
+      color: #ccc;
     }
-    table {
-      border-collapse: collapse;
+    #editor {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.9);
+      color: white;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 20px;
+      box-sizing: border-box;
+      overflow-y: auto;
     }
-    th, td {
-      padding: 6px 8px;
+    #editor input {
+      margin: 4px;
+      padding: 4px;
+      width: 200px;
+    }
+    #editor button {
+      margin: 8px;
     }
   </style>
 </head>
 <body>
-  <h1>RTA タイマー</h1>
-  <div class="timer" id="timer">00:00.00</div>
-  <button class="button" onclick="startStop()">▶️/⏸</button>
-  <button class="button" onclick="split()">⏱ スプリット</button>
-  <button class="button" onclick="reset()">🔄 リセット</button>
-  <button class="button" onclick="saveLayout()">💾 レイアウト保存</button>
-  <button class="button" onclick="loadLayout()">📂 レイアウト読込</button>
+  <div id="sidebar">
+    <button onclick="editSplits()">📝 Splits</button>
+    <button onclick="editLayout()">🎨 Layout</button>
+    <button onclick="startStop()">▶️ Start / Stop</button>
+    <button onclick="split()">⏱ Split</button>
+    <button onclick="reset()">🔄 Reset</button>
+    <button onclick="saveLayout()">💾 Save Layout</button>
+    <button onclick="loadLayout()">📂 Load Layout</button>
+  </div>
+  <div id="main">
+    <div>
+      <div id="header">
+        <div id="title">BotW Great Plateau</div>
+        <div id="category">Any%</div>
+      </div>
+      <div id="timer">00:00.00</div>
+      <div id="delta">+0.00</div>
+      <div id="splits"></div>
+    </div>
+    <div id="footer">
+      <span id="currentPace">Current Pace: 00:00</span>
+      <span id="sumOfBest">Sum of Best: 00:00</span>
+    </div>
+  </div>
 
-  <div class="splits" id="splits"></div>
-
-  <hr style="margin-top:40px">
-  <h3>🔧 スプリット編集</h3>
-  <table id="editTable" style="margin:0 auto; color:white;">
-    <thead>
-      <tr><th>ラベル</th><th>画像URL</th><th>プレビュー</th><th>削除</th></tr>
-    </thead>
-    <tbody></tbody>
-  </table>
-  <button class="button" onclick="addSplit()">➕ スプリット追加</button>
+  <div id="editor">
+    <h2>スプリット編集</h2>
+    <label>タイトル：<input id="titleInput" /></label><br>
+    <div id="splitList"></div>
+    <button onclick="addSplit()">＋ スプリット追加</button>
+    <button onclick="saveSplits()">保存して閉じる</button>
+  </div>
 
   <script>
-    let timerInterval;
     let startTime;
     let running = false;
+    let timerInterval;
     let currentSplit = 0;
+    let splitTimes = [];
     let bestSplits = [];
 
     let splitsData = [
-      { label: "スタート", img: "" },
-      { label: "中間1", img: "" },
-      { label: "ゴール", img: "" }
+      { label: "Bomb", img: "" },
+      { label: "Magnesis", img: "" },
+      { label: "Stasis", img: "" },
+      { label: "Cryonis", img: "" },
+      { label: "Paraglider", img: "" }
     ];
-    const splitTimes = [];
+    let timerTitle = "BotW Great Plateau";
 
-    function formatTime(ms) {
+    function format(ms) {
       const m = Math.floor(ms / 60000);
       const s = Math.floor((ms % 60000) / 1000);
       const cs = Math.floor((ms % 1000) / 10);
-      return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${cs.toString().padStart(2, '0')}`;
+      return `${m}:${s.toString().padStart(2, '0')}.${cs.toString().padStart(2, '0')}`;
     }
 
     function updateTimer() {
-      const now = performance.now();
-      const diff = now - startTime;
-      document.getElementById("timer").textContent = formatTime(diff);
+      const elapsed = performance.now() - startTime;
+      document.getElementById("timer").textContent = format(elapsed);
     }
 
     function startStop() {
@@ -100,8 +184,8 @@
         clearInterval(timerInterval);
         running = false;
       } else {
-        startTime = performance.now() - (splitTimes[splitTimes.length - 1] || 0);
-        timerInterval = setInterval(updateTimer, 10);
+        startTime = performance.now();
+        timerInterval = setInterval(updateTimer, 33);
         running = true;
       }
     }
@@ -122,117 +206,95 @@
       clearInterval(timerInterval);
       running = false;
       document.getElementById("timer").textContent = "00:00.00";
+      splitTimes = [];
       currentSplit = 0;
-      splitTimes.length = 0;
       renderSplits();
     }
 
     function renderSplits() {
+      document.getElementById("title").textContent = timerTitle;
       const container = document.getElementById("splits");
       container.innerHTML = "";
+      let totalBest = 0;
       splitsData.forEach((split, i) => {
-        const div = document.createElement("div");
-        div.className = "split";
+        const row = document.createElement("div");
+        row.className = "split";
 
-        const img = document.createElement("img");
-        img.src = split.img || "";
+        const label = document.createElement("div");
+        label.className = "split-label";
+        if (split.img) {
+          const img = document.createElement("img");
+          img.src = split.img;
+          label.appendChild(img);
+        }
+        label.appendChild(document.createTextNode(split.label));
 
-        const label = document.createElement("span");
-        label.textContent = split.label;
+        const time = document.createElement("div");
+        time.className = "split-time";
+        if (splitTimes[i]) time.textContent = format(splitTimes[i]);
+        else if (bestSplits[i]) time.textContent = format(bestSplits[i]);
+        else time.textContent = "--:--";
 
-        const time = document.createElement("span");
-        time.textContent = splitTimes[i] ? formatTime(splitTimes[i]) : "-";
+        row.appendChild(label);
+        row.appendChild(time);
+        container.appendChild(row);
 
-        const best = document.createElement("span");
-        best.textContent = bestSplits[i] ? `PB: ${formatTime(bestSplits[i])}` : "";
-
-        div.appendChild(img);
-        div.appendChild(label);
-        div.appendChild(time);
-        div.appendChild(best);
-        container.appendChild(div);
+        if (bestSplits[i]) totalBest += bestSplits[i];
       });
+      document.getElementById("sumOfBest").textContent = "Sum of Best: " + format(totalBest);
     }
 
-    function renderEditTable() {
-      const tbody = document.querySelector("#editTable tbody");
-      tbody.innerHTML = "";
+    function saveLayout() {
+      localStorage.setItem("splitsData", JSON.stringify(splitsData));
+      localStorage.setItem("timerTitle", timerTitle);
+      alert("保存しました");
+    }
+
+    function loadLayout() {
+      const data = localStorage.getItem("splitsData");
+      if (data) splitsData = JSON.parse(data);
+      const title = localStorage.getItem("timerTitle");
+      if (title) timerTitle = title;
+      renderSplits();
+    }
+
+    function editSplits() {
+      document.getElementById("editor").style.display = "flex";
+      document.getElementById("titleInput").value = timerTitle;
+      const list = document.getElementById("splitList");
+      list.innerHTML = "";
       splitsData.forEach((split, i) => {
-        const tr = document.createElement("tr");
-
-        const labelTd = document.createElement("td");
-        const labelInput = document.createElement("input");
-        labelInput.type = "text";
-        labelInput.value = split.label;
-        labelInput.style.width = "100px";
-        labelInput.oninput = () => {
-          splitsData[i].label = labelInput.value;
-          renderSplits();
-        };
-        labelTd.appendChild(labelInput);
-
-        const imgTd = document.createElement("td");
-        const imgInput = document.createElement("input");
-        imgInput.type = "text";
-        imgInput.value = split.img;
-        imgInput.style.width = "300px";
-        imgInput.oninput = () => {
-          splitsData[i].img = imgInput.value;
-          renderSplits();
-          renderEditTable();
-        };
-        imgTd.appendChild(imgInput);
-
-        const previewTd = document.createElement("td");
-        const imgPreview = document.createElement("img");
-        imgPreview.src = split.img;
-        imgPreview.style.width = "40px";
-        imgPreview.style.height = "40px";
-        previewTd.appendChild(imgPreview);
-
-        const deleteTd = document.createElement("td");
-        const deleteBtn = document.createElement("button");
-        deleteBtn.textContent = "🗑";
-        deleteBtn.className = "button";
-        deleteBtn.style.fontSize = "14px";
-        deleteBtn.onclick = () => {
-          splitsData.splice(i, 1);
-          renderEditTable();
-          renderSplits();
-        };
-        deleteTd.appendChild(deleteBtn);
-
-        tr.appendChild(labelTd);
-        tr.appendChild(imgTd);
-        tr.appendChild(previewTd);
-        tr.appendChild(deleteTd);
-        tbody.appendChild(tr);
+        const div = document.createElement("div");
+        div.innerHTML = `
+          <input placeholder="ラベル" value="${split.label}" onchange="splitsData[${i}].label=this.value">
+          <input placeholder="画像URL" value="${split.img}" onchange="splitsData[${i}].img=this.value">
+          <button onclick="removeSplit(${i})">❌</button>
+        `;
+        list.appendChild(div);
       });
     }
 
     function addSplit() {
-      splitsData.push({ label: `区間${splitsData.length + 1}`, img: "" });
-      renderEditTable();
+      splitsData.push({ label: "New Split", img: "" });
+      editSplits();
+    }
+
+    function removeSplit(index) {
+      splitsData.splice(index, 1);
+      editSplits();
+    }
+
+    function saveSplits() {
+      timerTitle = document.getElementById("titleInput").value;
+      document.getElementById("editor").style.display = "none";
       renderSplits();
     }
 
-    function saveLayout() {
-      const json = JSON.stringify(splitsData);
-      localStorage.setItem("rta_layout", json);
-      alert("レイアウトを保存しました");
-    }
-
-    function loadLayout() {
-      const json = localStorage.getItem("rta_layout");
-      if (json) {
-        splitsData = JSON.parse(json);
-        renderEditTable();
-        renderSplits();
-      }
+    function editLayout() {
+      alert("レイアウト編集画面は後ほど実装します。");
     }
 
     renderSplits();
-    renderEditTable();
   </script>
 </body>
 </html>
