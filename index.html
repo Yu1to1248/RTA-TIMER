@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RTAタイマー</title>
+  <style>
+    body {
+      background-color: #222;
+      color: white;
+      font-family: sans-serif;
+      text-align: center;
+    }
+    .timer {
+      font-size: 60px;
+      margin-top: 20px;
+    }
+    .splits {
+      margin-top: 30px;
+    }
+    .split {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      margin: 4px 0;
+    }
+    .split img {
+      width: 24px;
+      height: 24px;
+    }
+    .button {
+      font-size: 16px;
+      margin: 5px;
+      padding: 6px 12px;
+      cursor: pointer;
+    }
+    input[type="text"] {
+      padding: 4px;
+      font-size: 14px;
+    }
+    table {
+      border-collapse: collapse;
+    }
+    th, td {
+      padding: 6px 8px;
+    }
+  </style>
+</head>
+<body>
+  <h1>RTA タイマー</h1>
+  <div class="timer" id="timer">00:00.00</div>
+  <button class="button" onclick="startStop()">▶️/⏸</button>
+  <button class="button" onclick="split()">⏱ スプリット</button>
+  <button class="button" onclick="reset()">🔄 リセット</button>
+  <button class="button" onclick="saveLayout()">💾 レイアウト保存</button>
+  <button class="button" onclick="loadLayout()">📂 レイアウト読込</button>
+
+  <div class="splits" id="splits"></div>
+
+  <hr style="margin-top:40px">
+  <h3>🔧 スプリット編集</h3>
+  <table id="editTable" style="margin:0 auto; color:white;">
+    <thead>
+      <tr><th>ラベル</th><th>画像URL</th><th>プレビュー</th><th>削除</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+  <button class="button" onclick="addSplit()">➕ スプリット追加</button>
+
+  <script>
+    let timerInterval;
+    let startTime;
+    let running = false;
+    let currentSplit = 0;
+    let bestSplits = [];
+
+    let splitsData = [
+      { label: "スタート", img: "" },
+      { label: "中間1", img: "" },
+      { label: "ゴール", img: "" }
+    ];
+    const splitTimes = [];
+
+    function formatTime(ms) {
+      const m = Math.floor(ms / 60000);
+      const s = Math.floor((ms % 60000) / 1000);
+      const cs = Math.floor((ms % 1000) / 10);
+      return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${cs.toString().padStart(2, '0')}`;
+    }
+
+    function updateTimer() {
+      const now = performance.now();
+      const diff = now - startTime;
+      document.getElementById("timer").textContent = formatTime(diff);
+    }
+
+    function startStop() {
+      if (running) {
+        clearInterval(timerInterval);
+        running = false;
+      } else {
+        startTime = performance.now() - (splitTimes[splitTimes.length - 1] || 0);
+        timerInterval = setInterval(updateTimer, 10);
+        running = true;
+      }
+    }
+
+    function split() {
+      if (!running) return;
+      const now = performance.now();
+      const elapsed = now - startTime;
+      splitTimes[currentSplit] = elapsed;
+      if (!bestSplits[currentSplit] || elapsed < bestSplits[currentSplit]) {
+        bestSplits[currentSplit] = elapsed;
+      }
+      currentSplit++;
+      renderSplits();
+    }
+
+    function reset() {
+      clearInterval(timerInterval);
+      running = false;
+      document.getElementById("timer").textContent = "00:00.00";
+      currentSplit = 0;
+      splitTimes.length = 0;
+      renderSplits();
+    }
+
+    function renderSplits() {
+      const container = document.getElementById("splits");
+      container.innerHTML = "";
+      splitsData.forEach((split, i) => {
+        const div = document.createElement("div");
+        div.className = "split";
+
+        const img = document.createElement("img");
+        img.src = split.img || "";
+
+        const label = document.createElement("span");
+        label.textContent = split.label;
+
+        const time = document.createElement("span");
+        time.textContent = splitTimes[i] ? formatTime(splitTimes[i]) : "-";
+
+        const best = document.createElement("span");
+        best.textContent = bestSplits[i] ? `PB: ${formatTime(bestSplits[i])}` : "";
+
+        div.appendChild(img);
+        div.appendChild(label);
+        div.appendChild(time);
+        div.appendChild(best);
+        container.appendChild(div);
+      });
+    }
+
+    function renderEditTable() {
+      const tbody = document.querySelector("#editTable tbody");
+      tbody.innerHTML = "";
+      splitsData.forEach((split, i) => {
+        const tr = document.createElement("tr");
+
+        const labelTd = document.createElement("td");
+        const labelInput = document.createElement("input");
+        labelInput.type = "text";
+        labelInput.value = split.label;
+        labelInput.style.width = "100px";
+        labelInput.oninput = () => {
+          splitsData[i].label = labelInput.value;
+          renderSplits();
+        };
+        labelTd.appendChild(labelInput);
+
+        const imgTd = document.createElement("td");
+        const imgInput = document.createElement("input");
+        imgInput.type = "text";
+        imgInput.value = split.img;
+        imgInput.style.width = "300px";
+        imgInput.oninput = () => {
+          splitsData[i].img = imgInput.value;
+          renderSplits();
+          renderEditTable();
+        };
+        imgTd.appendChild(imgInput);
+
+        const previewTd = document.createElement("td");
+        const imgPreview = document.createElement("img");
+        imgPreview.src = split.img;
+        imgPreview.style.width = "40px";
+        imgPreview.style.height = "40px";
+        previewTd.appendChild(imgPreview);
+
+        const deleteTd = document.createElement("td");
+        const deleteBtn = document.createElement("button");
+        deleteBtn.textContent = "🗑";
+        deleteBtn.className = "button";
+        deleteBtn.style.fontSize = "14px";
+        deleteBtn.onclick = () => {
+          splitsData.splice(i, 1);
+          renderEditTable();
+          renderSplits();
+        };
+        deleteTd.appendChild(deleteBtn);
+
+        tr.appendChild(labelTd);
+        tr.appendChild(imgTd);
+        tr.appendChild(previewTd);
+        tr.appendChild(deleteTd);
+        tbody.appendChild(tr);
+      });
+    }
+
+    function addSplit() {
+      splitsData.push({ label: `区間${splitsData.length + 1}`, img: "" });
+      renderEditTable();
+      renderSplits();
+    }
+
+    function saveLayout() {
+      const json = JSON.stringify(splitsData);
+      localStorage.setItem("rta_layout", json);
+      alert("レイアウトを保存しました");
+    }
+
+    function loadLayout() {
+      const json = localStorage.getItem("rta_layout");
+      if (json) {
+        splitsData = JSON.parse(json);
+        renderEditTable();
+        renderSplits();
+      }
+    }
+
+    renderSplits();
+    renderEditTable();
+  </script>
+</body>
+</html>
